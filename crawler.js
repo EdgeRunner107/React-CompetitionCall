@@ -3,6 +3,8 @@ const router = express.Router();
 const puppeteer = require('puppeteer');
 const cheerio = require('cheerio');
 var db = require('../db');
+const bodyParser = require('body-parser');
+
 
 
 async function scrape(query) {
@@ -65,45 +67,49 @@ async function scrape(query) {
     return results;
 }
 
-router.get('/result2.json', async (req, res, next) => {
-    console.log("다햇음"); 
+
+
+
+
+router.get('/list.json', async(req, res) => {
     const query = req.query.search || '해커톤';
     const scrapedData = await scrape(query);
 
-    let insertionErrors = [];
+    // SELECT 문을 사용하여 competionDatas 테이블의 모든 데이터를 조회합니다.
+    const sql = 'SELECT * FROM competionDatas';
 
-    for (let item of scrapedData) {
-        const insertQuery = 'insert into CompetionDatas (title, link, date1, status1, daysLeft) VALUES (?, ?, ?, ?, ?)';
+    db.get().query(sql, async function(err, rows) {
+        if (err) {
+            console.error('데이터 조회 오류:', err);
+            res.status(500).send('서버 오류');
+        } else {
+            for (let item of scrapedData) {
+                const title = item.title;
 
-        try {
-            await new Promise((resolve, reject) => {
-                db.get().query(insertQuery, [item.title, item.link, item.date, item.status, item.daysLeft], (err, results) => {
-                    if (err) reject(err);
-                    resolve(results);
-                });
-            });
-        } catch (error) {
-            console.error("Error inserting data: ", error);
-            insertionErrors.push(error);
+                // 데이터베이스에서 해당 title이 이미 존재하는지 확인합니다.
+                const exists = rows.some(row => row.title === title);
+                console.log("중복체크성공?")
+                if (!exists) {
+                    const link = item.link;
+                    const date1 = item.date;
+                    const status1 = item.status;
+                    const daysLeft = item.daysLeft;
+
+                    const sql2 = 'INSERT INTO competionDatas (title, link, date1, status1, daysLeft) VALUES (?, ?, ?, ?, ?)';    
+                    db.get().query(sql2, [title, link, date1, status1, daysLeft], function(err, insertResult) {
+                        if (err) {
+                            console.error('데이터 삽입 오류:', err);
+                            // 삽입 오류시 추가적인 처리가 필요하면 여기에 추가합니다.
+                        } else {
+                            // 삽입에 성공했을 때의 추가적인 처리가 필요하면 여기에 추가합니다.
+                            console.log("삽입성공?")
+                        }
+                    });
+                }
+            }
+            
+            // 최종적으로 응답을 전송합니다.
+            res.send({ list: rows });
         }
-    }
-
-    if (insertionErrors.length > 0) {
-        res.status(500).send('Some entries failed to insert. Check the logs.');
-    } else {
-        res.status(200).send('Data successfully inserted!');
-    }
+    });
 });
-
-
-
-
-
-
-
-
-
-
-
-
-module.exports = router;
